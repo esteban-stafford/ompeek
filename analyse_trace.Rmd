@@ -1,0 +1,39 @@
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+library(knitr)
+```
+---
+title: "`r knitr::current_input()`"
+author: "Esteban Stafford"
+output: html_document
+---
+
+```{r}
+trace <- read.table("demo.trace", header = FALSE, sep = ":")
+names(trace) <- c("time", "thread", "construct", "phase","ptr")
+trace <- trace %>% mutate(time = time - min(time), ptr = as.factor(ptr))
+end_time <- max(trace$time)
+
+intervals <- trace %>%
+  group_by(thread) %>%
+  arrange(time) %>%
+  mutate(
+    start_time = time,
+    end_time = coalesce(lead(time), end_time)
+  ) %>%
+  filter(phase == "begin") %>%
+  select(start_time, end_time, thread, construct, ptr) %>%
+  ungroup()
+```
+
+```{r}
+intervals %>%
+  ggplot(aes(x = start_time, xend = end_time, y = thread, yend = thread, color = ptr)) +
+     geom_segment(linewidth = 1) +
+     geom_point(aes(x=start_time), size = 2, shape=108) +
+     theme(legend.position = "bottom") +
+     labs(x = "Time", y = "Thread")
+```

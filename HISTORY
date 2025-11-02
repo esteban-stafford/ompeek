@@ -1,0 +1,3 @@
+make
+OMP_TOOL_LIBRARIES=./libompt_tool_event.so ./demo | tee >(grep ':' > demo.trace)
+knit analyse_trace.Rmd 
