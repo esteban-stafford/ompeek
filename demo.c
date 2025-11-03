@@ -10,7 +10,13 @@ void busy_wait(double seconds) {
 
 void apply_filter(int id, double duration) {
     printf("Task %d started (%.2fs)\n", id, duration);
-    busy_wait(duration);
+    busy_wait(duration/3);
+    #pragma omp critical
+    {
+        printf("Task %d in critical section (%.2fs)\n", id, duration/3);
+        busy_wait(duration/3);
+    }
+    busy_wait(duration/3);
     printf("Task %d finished\n", id);
 }
 
@@ -63,7 +69,6 @@ int main() {
             }
         }
     }
-    return 0;
     busy_wait(0.75);
 
     // Second parallel region

@@ -5,8 +5,16 @@
 #include <chrono>
 #include <mutex>
 #include <vector>
+#include <stack>
 
 static std::chrono::steady_clock::time_point reference_time;
+
+struct Burst {
+    std::chrono::steady_clock::time_point start_time;
+    std::chrono::steady_clock::time_point end_time;
+//    const std::string type;
+    const void* codeptr = nullptr;
+};
 
 struct TaskInfo {
     std::chrono::steady_clock::time_point start_time;
@@ -15,6 +23,7 @@ struct TaskInfo {
 };
 
 const int MAX_THREADS = 128;
+std::vector<std::stack<Burst>> thread_bursts(MAX_THREADS);
 std::vector<TaskInfo> thread_tasks(MAX_THREADS);
 std::mutex task_mutex;
 std::ofstream logFile("omp_events.log");
@@ -30,21 +39,20 @@ std::string get_construct_type(ompt_work_t type) {
     }
 }
 
-void log_event(int thread_id, const std::string& type, void* pointer,
-               std::chrono::steady_clock::time_point begin,
-               std::chrono::steady_clock::time_point end) {
-    std::lock_guard<std::mutex> guard(logMutex);
-    auto begin_rel = std::chrono::duration_cast<std::chrono::microseconds>(begin - reference_time).count();
-    auto end_rel = std::chrono::duration_cast<std::chrono::microseconds>(end - reference_time).count();
+void log_burst(const Burst& burst, int thread_id) {
+  std::lock_guard<std::mutex> guard(logMutex);
+  auto begin_rel = std::chrono::duration_cast<std::chrono::microseconds>(burst.start_time - reference_time).count();
+  auto end_rel = std::chrono::duration_cast<std::chrono::microseconds>(burst.end_time - reference_time).count();
 
-    logFile << thread_id << ":"
-            << begin_rel << ":"
-            << end_rel << ":"
-            << type << ":"
-            << pointer << std::endl;
+  std::string construct_type = "";
+
+  logFile << thread_id
+          << ":" << begin_rel
+          << ":" << end_rel
+          << construct_type << ":"
+          << burst.codeptr << std::endl;
 }
 
-// Work construct callback
 static void on_work(
     ompt_work_t work_type,
     ompt_scope_endpoint_t endpoint,
@@ -53,14 +61,16 @@ static void on_work(
     uint64_t count,
     const void *codeptr_ra)
 {
-    static thread_local std::chrono::steady_clock::time_point begin_time;
-
+    int thread_id = omp_get_thread_num();
     if (endpoint == ompt_scope_begin) {
-        begin_time = std::chrono::steady_clock::now();
+        Burst& burst = thread_bursts[thread_id].emplace();
+        burst.codeptr = (void*)codeptr_ra;
+        burst.start_time = std::chrono::steady_clock::now();
     } else if (endpoint == ompt_scope_end) {
-        auto end_time = std::chrono::steady_clock::now();
-        int thread_id = omp_get_thread_num();
-        log_event(thread_id, get_construct_type(work_type), (void*)codeptr_ra, begin_time, end_time);
+        Burst burst = thread_bursts[thread_id].top();
+        burst.end_time = std::chrono::steady_clock::now();
+        log_burst(burst, thread_id);
+        thread_bursts[thread_id].pop();
     }
 }
 
@@ -76,31 +86,31 @@ static void on_task_create(
     new_task_data->ptr = (void*)codeptr_ra;
 }
 
-// Task execution callback (using task_schedule instead of deprecated task)
 static void on_task_schedule(
     ompt_data_t *prior_task_data,
     ompt_task_status_t prior_task_status,
     ompt_data_t *next_task_data)
 {
-    auto now = std::chrono::steady_clock::now();
     int thread_id = omp_get_thread_num();
+    auto now = std::chrono::steady_clock::now();
 
     // End previous task if active
     if (thread_tasks[thread_id].active) {
-        log_event(thread_id, "task", thread_tasks[thread_id].codeptr,
-                  thread_tasks[thread_id].start_time, now);
+        Burst& burst = thread_bursts[thread_id].top();
+        burst.end_time = now;
+        log_burst(burst, thread_id);
         thread_tasks[thread_id].active = false;
     }
 
     // Start new task only if valid
     if (next_task_data && next_task_data->ptr) {
-        thread_tasks[thread_id].start_time = now;
-        thread_tasks[thread_id].codeptr = next_task_data->ptr;
+        Burst& burst = thread_bursts[thread_id].emplace();
+        burst.start_time = now;
+        burst.codeptr = next_task_data->ptr;
         thread_tasks[thread_id].active = true;
     }
 }
 
-// Mutex acquire callback (waiting)
 static void on_mutex_acquire(
     ompt_mutex_t kind,
     unsigned int hint,
@@ -108,20 +118,48 @@ static void on_mutex_acquire(
     ompt_wait_id_t wait_id,
     const void *codeptr_ra)
 {
-    auto now = std::chrono::steady_clock::now();
     int thread_id = omp_get_thread_num();
-    log_event(thread_id, "acquiring", (void*)codeptr_ra, now, now);
+    Burst& burst = thread_bursts[thread_id].top();
+    auto now = std::chrono::steady_clock::now();
+    burst.end_time = now;
+    log_burst(burst, thread_id);
+
+    Burst& wait_burst = thread_bursts[thread_id].emplace();
+    wait_burst.start_time = now;
+    wait_burst.codeptr = codeptr_ra;
 }
 
-// Mutex acquired callback (locked)
 static void on_mutex_acquired(
     ompt_mutex_t kind,
     ompt_wait_id_t wait_id,
     const void *codeptr_ra)
 {
-    auto now = std::chrono::steady_clock::now();
     int thread_id = omp_get_thread_num();
-    log_event(thread_id, "locked", (void*)codeptr_ra, now, now);
+    Burst& wait_burst = thread_bursts[thread_id].top();
+    auto now = std::chrono::steady_clock::now();
+    wait_burst.end_time = now;
+    //log_burst(wait_burst, thread_id);
+
+    // These two stack operations could be combined, but keeping them separate for clarity
+    thread_bursts[thread_id].pop();
+    Burst& critical_burst = thread_bursts[thread_id].emplace();
+    critical_burst.start_time = now;
+}
+
+static void on_mutex_released(
+    ompt_mutex_t kind,
+    ompt_wait_id_t wait_id,
+    const void *codeptr_ra)
+{
+    int thread_id = omp_get_thread_num();
+    Burst& critical_burst = thread_bursts[thread_id].top();
+    auto now = std::chrono::steady_clock::now();
+    critical_burst.end_time = now;
+    log_burst(critical_burst, thread_id);
+    thread_bursts[thread_id].pop();
+
+    Burst& burst = thread_bursts[thread_id].top();
+    burst.start_time = now;
 }
 
 // Initialization
@@ -134,23 +172,33 @@ static int ompt_initialize(
    auto ompt_set_callback = (ompt_set_callback_t)lookup("ompt_set_callback");
 
    ompt_set_callback(ompt_callback_work, (ompt_callback_t)&on_work);
+   ompt_set_callback(ompt_callback_task_create, (ompt_callback_t)&on_task_create);
    ompt_set_callback(ompt_callback_task_schedule, (ompt_callback_t)&on_task_schedule);
    ompt_set_callback(ompt_callback_mutex_acquire, (ompt_callback_t)&on_mutex_acquire);
    ompt_set_callback(ompt_callback_mutex_acquired, (ompt_callback_t)&on_mutex_acquired);
-   ompt_set_callback(ompt_callback_task_create, (ompt_callback_t)&on_task_create);
+   ompt_set_callback(ompt_callback_mutex_released, (ompt_callback_t)&on_mutex_released);
 
-   return 1; // success
+   return 1;
 }
 
 static void ompt_finalize(ompt_data_t *tool_data) {
     auto now = std::chrono::steady_clock::now();
     std::lock_guard<std::mutex> guard(task_mutex);
 
-    for (int thread_id = 0; thread_id < thread_tasks.size(); ++thread_id) {
-        if (thread_tasks[thread_id].active) {
-            log_event(thread_id, "task", thread_tasks[thread_id].codeptr,
-                      thread_tasks[thread_id].start_time, now);
-        }
+    std::cout << "[OMPT Tool] Finalizing and flushing remaining bursts." << std::endl;
+
+    for (int thread_id = 0; thread_id < thread_bursts.size(); ++thread_id) {
+      if (!thread_bursts[thread_id].empty()) {
+          /* std::cerr << "  Flushing burst for thread " << thread_id << std::endl;
+          Burst& burst = thread_bursts[thread_id].top();
+          burst.end_time = now;
+          log_burst(burst, thread_id); */
+          //thread_bursts[thread_id].pop();
+          // if(!thread_bursts[thread_id].empty()) {
+          //     Burst& next_burst = thread_bursts[thread_id].top();
+          //     next_burst.start_time = now;
+          // }
+      }
     }
 
     logFile.close();
