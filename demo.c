@@ -31,23 +31,24 @@ int main() {
             #pragma omp section
             {
                 printf("Section 1 (0.25s)\n");
-                busy_wait(0.75);
+                busy_wait(0.25);
                 #pragma omp critical
                 {
-                   printf("Critical section (0.25s)\n");
-                   busy_wait(0.25);
+                   printf("Critical section (0.75s)\n");
+                   busy_wait(0.75);
                 }
+                busy_wait(0.25);
             }
             #pragma omp section
             {
                 printf("Section 2 (0.5s)\n");
-                busy_wait(0.5);
+                busy_wait(0.25);
                 #pragma omp critical
                 {
-                   printf("Critical section (0.25s)\n");
-                   busy_wait(0.25);
+                   printf("Critical section (0.5s)\n");
+                   busy_wait(0.5);
                 }
-                busy_wait(0.25);
+                busy_wait(0.5);
             }
             #pragma omp section
             {
@@ -62,7 +63,9 @@ int main() {
             }
         }
     }
+    return 0;
     busy_wait(0.75);
+
     // Second parallel region
     #pragma omp parallel
     {
@@ -73,20 +76,27 @@ int main() {
             busy_wait(duration);
         }
 
-        #pragma omp barrier
-
         #pragma omp single
         {
-            for (int seq = 0; seq < 3; seq++) {
-                for (int step = 0; step < 4; step++) {
-                    double duration = 0.25 + 0.25 * (step % 3);
-                    #pragma omp task depend(inout: seq) firstprivate(seq, step, duration)
+            int seq[5];
+            for (int seq_id = 0; seq_id < 5; seq_id++) {
+                seq[seq_id] = seq_id;
+                for (int step = 0; step < 3; step++) {
+                    double duration = 0.25 + 0.25 * seq_id + 0.25 * step;
+                    #pragma omp task depend(inout: seq[seq_id]) firstprivate(seq_id, step, duration)
                     {
-                        int id = seq * 10 + step;
+                        int id = seq_id * 10 + step;
                         apply_filter(id, duration);
                     }
                 }
             }
+        }
+        #pragma omp taskwait
+
+        #pragma omp single
+        {
+            printf("Single section (0.25s)\n");
+            busy_wait(0.25);
         }
     }
 
