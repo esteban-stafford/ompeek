@@ -9,10 +9,21 @@
 
 static std::chrono::steady_clock::time_point reference_time;
 
+typedef enum {
+    BURST_TYPE_FOR,
+    BURST_TYPE_SECTION,
+    BURST_TYPE_SINGLE,
+    BURST_TYPE_SINGLE_OTHER,
+    BURST_TYPE_TASK,
+    BURST_TYPE_CRITICAL,
+    BURST_TYPE_WAIT,
+    BURST_TYPE_UNKNOWN
+} BurstType;
+
 struct Burst {
     std::chrono::steady_clock::time_point start_time;
     std::chrono::steady_clock::time_point end_time;
-//    const std::string type;
+    BurstType type = BURST_TYPE_UNKNOWN;
     const void* codeptr = nullptr;
 };
 
@@ -29,28 +40,16 @@ std::mutex task_mutex;
 std::ofstream logFile("omp_events.log");
 std::mutex logMutex;
 
-std::string get_construct_type(ompt_work_t type) {
-    switch (type) {
-        case ompt_work_loop: return "for";
-        case ompt_work_sections: return "sections";
-        case ompt_work_single_executor: return "single";
-        case ompt_work_single_other: return "single_other";
-        default: return "unknown";
-    }
-}
-
 void log_burst(const Burst& burst, int thread_id) {
   std::lock_guard<std::mutex> guard(logMutex);
   auto begin_rel = std::chrono::duration_cast<std::chrono::microseconds>(burst.start_time - reference_time).count();
   auto end_rel = std::chrono::duration_cast<std::chrono::microseconds>(burst.end_time - reference_time).count();
-
-  std::string construct_type = "";
-
   logFile << thread_id
           << ":" << begin_rel
           << ":" << end_rel
-          << construct_type << ":"
-          << burst.codeptr << std::endl;
+          << ":" << burst.type
+          << ":" << burst.codeptr
+          << std::endl;
 }
 
 static void on_work(
@@ -64,6 +63,23 @@ static void on_work(
     int thread_id = omp_get_thread_num();
     if (endpoint == ompt_scope_begin) {
         Burst& burst = thread_bursts[thread_id].emplace();
+        switch (work_type) {
+            case ompt_work_loop:
+                burst.type = BURST_TYPE_FOR;
+                break;
+            case ompt_work_sections:
+                burst.type = BURST_TYPE_SECTION;
+                break;
+            case ompt_work_single_executor:
+                burst.type = BURST_TYPE_SINGLE;
+                break;
+            case ompt_work_single_other:
+                burst.type = BURST_TYPE_SINGLE_OTHER;
+                break;
+            default:
+                burst.type = BURST_TYPE_UNKNOWN;
+                break;
+        }
         burst.codeptr = (void*)codeptr_ra;
         burst.start_time = std::chrono::steady_clock::now();
     } else if (endpoint == ompt_scope_end) {
@@ -106,6 +122,7 @@ static void on_task_schedule(
     if (next_task_data && next_task_data->ptr) {
         Burst& burst = thread_bursts[thread_id].emplace();
         burst.start_time = now;
+        burst.type = BURST_TYPE_TASK;
         burst.codeptr = next_task_data->ptr;
         thread_tasks[thread_id].active = true;
     }
@@ -126,6 +143,7 @@ static void on_mutex_acquire(
 
     Burst& wait_burst = thread_bursts[thread_id].emplace();
     wait_burst.start_time = now;
+    wait_burst.type = BURST_TYPE_WAIT;
     wait_burst.codeptr = codeptr_ra;
 }
 
@@ -144,6 +162,8 @@ static void on_mutex_acquired(
     thread_bursts[thread_id].pop();
     Burst& critical_burst = thread_bursts[thread_id].emplace();
     critical_burst.start_time = now;
+    critical_burst.type = BURST_TYPE_CRITICAL;
+    critical_burst.codeptr = codeptr_ra;
 }
 
 static void on_mutex_released(
@@ -182,25 +202,6 @@ static int ompt_initialize(
 }
 
 static void ompt_finalize(ompt_data_t *tool_data) {
-    auto now = std::chrono::steady_clock::now();
-    std::lock_guard<std::mutex> guard(task_mutex);
-
-    std::cout << "[OMPT Tool] Finalizing and flushing remaining bursts." << std::endl;
-
-    for (int thread_id = 0; thread_id < thread_bursts.size(); ++thread_id) {
-      if (!thread_bursts[thread_id].empty()) {
-          /* std::cerr << "  Flushing burst for thread " << thread_id << std::endl;
-          Burst& burst = thread_bursts[thread_id].top();
-          burst.end_time = now;
-          log_burst(burst, thread_id); */
-          //thread_bursts[thread_id].pop();
-          // if(!thread_bursts[thread_id].empty()) {
-          //     Burst& next_burst = thread_bursts[thread_id].top();
-          //     next_burst.start_time = now;
-          // }
-      }
-    }
-
     logFile.close();
 }
 
