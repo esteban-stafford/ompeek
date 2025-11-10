@@ -1,0 +1,43 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use File::Basename;
+use File::Path qw(make_path);
+
+if (@ARGV != 2) {
+    die "Usage: $0 input.html output.cpp\n";
+}
+
+my ($infile, $outfile) = @ARGV;
+
+open my $in, '<:encoding(UTF-8)', $infile
+  or die "Cannot open $infile: $!";
+local $/ = undef;
+my $html = <$in>;
+close $in;
+
+# Split HTML around placeholder
+my $marker = '<!-- EVENT_DATA_PLACEHOLDER -->';
+my ($header, $footer) = split(/\Q$marker\E/, $html, 2);
+
+my $delimiter = 'BURSTVIEWER';
+my $outdir = dirname($outfile);
+make_path($outdir) unless -d $outdir;
+
+open my $out, '>:encoding(UTF-8)', $outfile
+  or die "Cannot write $outfile: $!";
+
+print $out "// Auto-generated from $infile — do not edit manually\n";
+print $out "const char BURST_VIEWER_HTML_HEADER[] = R\"$delimiter(\n";
+print $out $header;
+print $out "\n)$delimiter\";\n\n";
+
+if (defined $footer) {
+    print $out "const char BURST_VIEWER_HTML_FOOTER[] = R\"$delimiter(\n";
+    print $out $footer;
+    print $out "\n)$delimiter\";\n";
+} else {
+    print $out "const char BURST_VIEWER_HTML_FOOTER[] = \"\";\n";
+}
+
+close $out;

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Burst Visualiser</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial; margin:12px}
+    .controls{display:flex;gap:12px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+    label{font-size:13px}
+    #plot{width:100%;height:600px}
+    .small{font-size:12px;color:#666}
+    .row{display:flex;gap:8px;align-items:center}
+    input[type=file]{display:none}
+    .btn{padding:6px 10px;border-radius:6px;border:1px solid #bbb;background:#f6f6f6;cursor:pointer}
+  </style>
+</head>
+<body>
+  <h3>Burst visualiser</h3>
+  <div class="controls">
+    <div class="row">
+      <label for="units">Units</label>
+      <select id="units">
+        <option value="1">us</option>
+        <option value="0.001">ms</option>
+        <option value="0.000001">s</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>Color by</label>
+      <label><input type="radio" name="colorby" value="type" checked> type</label>
+      <label><input type="radio" name="colorby" value="codeptr"> codeptr</label>
+    </div>
+  </div>
+
+  <div id="plot"></div>
+
+  <div class="small">Hover lines for details. Crosshair at burst start. X axis scaled by selected units.</div>
+
+  <script>
+  const TYPE_NAMES = {
+    0: 'for',
+    1: 'section',
+    2: 'single',
+    3: 'single_other',
+    4: 'task',
+    5: 'critical',
+    6: 'wait',
+    7: 'unknown'
+  };
+
+  function parseContent(txt){
+    const lines = txt.split(/\r?\n/).map(l=>l.trim()).filter(l=>l && !l.startsWith('#'));
+    const bursts = [];
+    for(const line of lines){
+      const parts = line.split(':');
+      if(parts.length < 5) continue;
+      const thread = parts[0];
+      const start = Number(parts[1]);
+      const end = Number(parts[2]);
+      const type = parts[3];
+      const codeptr = parts.slice(4).join(':');
+      if(Number.isFinite(start) && Number.isFinite(end)){
+        bursts.push({thread, start, end, type, codeptr});
+      }
+    }
+    return bursts;
+  }
+
+  function unique(arr){ return Array.from(new Set(arr)); }
+
+  const PALETTE = [
+    '#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b','#e377c2','#7f7f7f','#bcbd22','#17becf'
+  ];
+
+  function buildColorMap(keys){
+    const map = {};
+    keys.forEach((k,i)=> map[k] = PALETTE[i % PALETTE.length]);
+    return map;
+  }
+
+  function render(bursts, unitsFactor, colorBy){
+    if(!bursts || bursts.length===0){
+      Plotly.purge('plot');
+      return;
+    }
+    const threads = unique(bursts.map(b=>b.thread)).sort((a,b)=>Number(a)-Number(b));
+    const yMap = {};
+    threads.forEach((t,i)=> yMap[t]=(i+1));
+
+    const groups = {};
+    for(const b of bursts){
+      const key = (colorBy==='type')? b.type : b.codeptr;
+      if(!groups[key]) groups[key]=[];
+      groups[key].push(b);
+    }
+
+    const traces = [];
+    for(const key of Object.keys(groups)){
+      const segsX = [];
+      const segsY = [];
+      const hoverForPoints = [];
+      for(const b of groups[key]){
+        segsX.push(b.start*unitsFactor, b.end*unitsFactor, null);
+        segsY.push(yMap[b.thread], yMap[b.thread], null);
+        const typeWord = TYPE_NAMES[b.type] || b.type;
+        const unitLabel = (unitsFactor===1? 'us' : unitsFactor===0.001? 'ms' : 's');
+        const t = `thread: ${b.thread}<br>start: ${(b.start*unitsFactor).toFixed(3)} ${unitLabel}<br>end: ${(b.end*unitsFactor).toFixed(3)} ${unitLabel}<br>duration: ${((b.end - b.start)*unitsFactor).toFixed(3)} ${unitLabel}<br>type: ${typeWord}<br>codeptr: ${b.codeptr}`;
+        hoverForPoints.push(t, t, '');
+      }
+      traces.push({
+        x: segsX,
+        y: segsY,
+        mode: 'lines',
+        line: {width:6},
+        name: colorBy==='type' ? (TYPE_NAMES[key] || key) : key,
+        hoverinfo: 'text',
+        hoverlabel: {align:'left'},
+        text: hoverForPoints,
+        showlegend: true
+      });
+    }
+
+    const keys = Object.keys(groups);
+    const cmap = buildColorMap(keys);
+    traces.forEach(t=> t.line.color = cmap[t.name]);
+
+    const crossX = [], crossY = [];
+    for(const b of bursts){
+      crossX.push(b.start*unitsFactor);
+      crossY.push(yMap[b.thread]);
+    }
+
+    traces.push({
+      x: crossX,
+      y: crossY,
+      mode: 'markers',
+      marker: {symbol: 'cross-thin-open', size: 8, color: '#000'},
+      hoverinfo: 'none',
+      showlegend: false
+    });
+
+    const layout = {
+      title: 'Bursts',
+      xaxis: {title: 'Time (' + (unitsFactor===1? 'us' : unitsFactor===0.001? 'ms' : 's') + ')'},
+      yaxis: {
+        tickmode: 'array',
+        tickvals: threads.map(t=>yMap[t]),
+        ticktext: threads,
+        autorange: 'reversed'
+      },
+      legend: {orientation: 'h', yanchor: 'top', y: -0.2, xanchor: 'center', x: 0.5},
+      hovermode: 'closest',
+      margin: {l:80, r:30, t:40, b:80}
+    };
+
+    Plotly.newPlot('plot', traces, layout, {responsive:true});
+  }
+
+  const unitsSel = document.getElementById('units');
+  let currentBursts = [];
+
+  function updatePlot(){
+    render(currentBursts, Number(unitsSel.value), document.querySelector('input[name=colorby]:checked').value);
+  }
+
+  unitsSel.addEventListener('change', updatePlot);
+  document.querySelectorAll('input[name=colorby]').forEach(r=>r.addEventListener('change', updatePlot));
+  document.addEventListener('DOMContentLoaded', function(){
+    const embedded = document.getElementById('embedded-events');
+    if (embedded) {
+      const txt = embedded.textContent.trim();
+      currentBursts = parseContent(txt);
+      updatePlot();
+    }
+  });
+  </script>
+  <!-- EVENT_DATA_PLACEHOLDER --> 
+</body>
+</html>

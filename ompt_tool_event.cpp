@@ -9,6 +9,9 @@
 #include <cstdlib>
 #include <string>
 #include <cstring>
+#include <sstream>
+
+#include "burst_viewer_embed.cpp"
 
 static std::chrono::steady_clock::time_point reference_time;
 
@@ -49,34 +52,48 @@ std::mutex logMutex;
 static std::ofstream logFile;
 
 static void init_tool_output_config() {
-    const char* fmt_env = std::getenv("TOOL_OUT_FORMAT");
-    const char* file_env = std::getenv("TOOL_FILENAME");
+  const char* fmt_env = std::getenv("TOOL_FILE_FORMAT");
+  const char* file_env = std::getenv("TOOL_FILENAME");
 
-    std::string fmt = fmt_env ? fmt_env : "log";
-    if (fmt == "html" || fmt == "HTML")
-        g_tool_format = OutputFormat::HTML;
-    else
-        g_tool_format = OutputFormat::LOG;
+  std::string fmt = fmt_env ? fmt_env : "log";
+  if (fmt == "html" || fmt == "HTML")
+    g_tool_format = OutputFormat::HTML;
+  else
+    g_tool_format = OutputFormat::LOG;
 
-    if (file_env && std::strlen(file_env) > 0)
-        g_tool_filename = file_env;
-    else
-        g_tool_filename = (g_tool_format == OutputFormat::HTML)
-            ? "omp_events.html"
-            : "omp_events.log";
+  if (file_env && std::strlen(file_env) > 0)
+    g_tool_filename = file_env;
+  else
+    g_tool_filename = (g_tool_format == OutputFormat::HTML)
+      ? "omp_events.html"
+      : "omp_events.log";
 
-    std::cerr << "[ompt_tool_event] Output file: " << g_tool_filename
-              << " (" << (g_tool_format == OutputFormat::HTML ? "HTML" : "LOG") << ")\n";
+  std::cerr << "[ompt_tool_event] Output file: " << g_tool_filename
+    << " (" << (g_tool_format == OutputFormat::HTML ? "HTML" : "LOG") << ")\n";
 }
 
 static void open_log_file() {
-    if (!logFile.is_open()) {
-        logFile.open(g_tool_filename, std::ios::out | std::ios::trunc);
-        if (!logFile) {
-            std::cerr << "[ompt_tool_event] Failed to open output file: "
-                      << g_tool_filename << "\n";
-        }
+  if (!logFile.is_open()) {
+    logFile.open(g_tool_filename, std::ios::out | std::ios::trunc);
+    if (!logFile) {
+      std::cerr << "[ompt_tool_event] Failed to open output file: "
+        << g_tool_filename << "\n";
     }
+  }
+  if (g_tool_format == OutputFormat::HTML) {
+    logFile << BURST_VIEWER_HTML_HEADER;
+    logFile << "<script id=\"embedded-events\" type=\"text/plain\">\n";
+  }
+}
+
+static void close_log_file() {
+  if (logFile.is_open()) {
+    if (g_tool_format == OutputFormat::HTML) {
+      logFile << "</script>\n";
+      logFile << BURST_VIEWER_HTML_FOOTER;
+    }
+    logFile.close();
+  }
 }
 
 void log_burst(const Burst& burst, int thread_id) {
@@ -243,7 +260,7 @@ static int ompt_initialize(
 }
 
 static void ompt_finalize(ompt_data_t *tool_data) {
-    logFile.close();
+    close_log_file();
 }
 
 extern "C" ompt_start_tool_result_t* ompt_start_tool(
