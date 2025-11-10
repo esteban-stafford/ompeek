@@ -6,8 +6,16 @@
 #include <mutex>
 #include <vector>
 #include <stack>
+#include <cstdlib>
+#include <string>
+#include <cstring>
 
 static std::chrono::steady_clock::time_point reference_time;
+
+enum class OutputFormat { LOG, HTML };
+
+static std::string g_tool_filename;
+static OutputFormat g_tool_format = OutputFormat::LOG;
 
 typedef enum {
     BURST_TYPE_FOR,
@@ -37,8 +45,39 @@ const int MAX_THREADS = 128;
 std::vector<std::stack<Burst>> thread_bursts(MAX_THREADS);
 std::vector<TaskInfo> thread_tasks(MAX_THREADS);
 std::mutex task_mutex;
-std::ofstream logFile("omp_events.log");
 std::mutex logMutex;
+static std::ofstream logFile;
+
+static void init_tool_output_config() {
+    const char* fmt_env = std::getenv("TOOL_OUT_FORMAT");
+    const char* file_env = std::getenv("TOOL_FILENAME");
+
+    std::string fmt = fmt_env ? fmt_env : "log";
+    if (fmt == "html" || fmt == "HTML")
+        g_tool_format = OutputFormat::HTML;
+    else
+        g_tool_format = OutputFormat::LOG;
+
+    if (file_env && std::strlen(file_env) > 0)
+        g_tool_filename = file_env;
+    else
+        g_tool_filename = (g_tool_format == OutputFormat::HTML)
+            ? "omp_events.html"
+            : "omp_events.log";
+
+    std::cerr << "[ompt_tool_event] Output file: " << g_tool_filename
+              << " (" << (g_tool_format == OutputFormat::HTML ? "HTML" : "LOG") << ")\n";
+}
+
+static void open_log_file() {
+    if (!logFile.is_open()) {
+        logFile.open(g_tool_filename, std::ios::out | std::ios::trunc);
+        if (!logFile) {
+            std::cerr << "[ompt_tool_event] Failed to open output file: "
+                      << g_tool_filename << "\n";
+        }
+    }
+}
 
 void log_burst(const Burst& burst, int thread_id) {
   std::lock_guard<std::mutex> guard(logMutex);
@@ -188,6 +227,8 @@ static int ompt_initialize(
     int initial_device_num,
     ompt_data_t *tool_data)
 {
+   init_tool_output_config();
+   open_log_file();
    reference_time = std::chrono::steady_clock::now();
    auto ompt_set_callback = (ompt_set_callback_t)lookup("ompt_set_callback");
 
