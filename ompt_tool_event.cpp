@@ -36,6 +36,7 @@ struct Burst {
     std::chrono::steady_clock::time_point end_time;
     BurstType type = BURST_TYPE_UNKNOWN;
     const void* codeptr = nullptr;
+    int user_data = 0;
 };
 
 struct TaskInfo {
@@ -105,6 +106,7 @@ void log_burst(const Burst& burst, int thread_id) {
           << ":" << end_rel
           << ":" << burst.type
           << ":" << burst.codeptr
+          << ":" << burst.user_data
           << std::endl;
 }
 
@@ -237,6 +239,14 @@ static void on_mutex_released(
     Burst& burst = thread_bursts[thread_id].top();
     burst.start_time = now;
 }
+
+static void burst_set_id_tool(int id)
+{
+  int thread_id = omp_get_thread_num();
+  Burst& burst = thread_bursts[thread_id].top();
+  burst.user_data = id;
+}
+
 
 // Initialization
 static int ompt_initialize(

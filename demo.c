@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <omp.h>
 #include <unistd.h>
+#include "burst.h"
 
 void busy_wait(double seconds) {
     double start = omp_get_wtime();
@@ -69,7 +70,6 @@ int main() {
             }
         }
     }
-    return 0;
     busy_wait(0.75);
 
     // Second parallel region
@@ -92,6 +92,7 @@ int main() {
                     #pragma omp task depend(inout: seq[seq_id]) firstprivate(seq_id, step, duration)
                     {
                         int id = seq_id * 10 + step;
+                        burst_set_id(id);
                         apply_filter(id, duration);
                     }
                 }
