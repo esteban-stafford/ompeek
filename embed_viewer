@@ -16,17 +16,11 @@ local $/ = undef;
 my $html = <$in>;
 close $in;
 
-<<<<<<< Updated upstream
 # Split HTML around placeholder
 my $marker = '<!-- EVENT_DATA_PLACEHOLDER -->';
 my ($header, $footer) = split(/\Q$marker\E/, $html, 2);
 
 my $delimiter = 'BURSTVIEWER';
-=======
-# Choose a delimiter unlikely to appear in HTML
-my $delimiter = 'BURSTVIEWER';
-
->>>>>>> Stashed changes
 my $outdir = dirname($outfile);
 make_path($outdir) unless -d $outdir;
 
@@ -34,7 +28,6 @@ open my $out, '>:encoding(UTF-8)', $outfile
   or die "Cannot write $outfile: $!";
 
 print $out "// Auto-generated from $infile — do not edit manually\n";
-<<<<<<< Updated upstream
 print $out "const char BURST_VIEWER_HTML_HEADER[] = R\"$delimiter(\n";
 print $out $header;
 print $out "\n)$delimiter\";\n\n";
@@ -48,11 +41,4 @@ if (defined $footer) {
 }
 
 close $out;
-=======
-print $out "const char BURST_VIEWER_HTML[] = R\"$delimiter(\n";
-print $out $html;
-print $out "\n)$delimiter\";\n";
-close $out;
-
-print "Generated $outfile\n";
->>>>>>> Stashed changes
+print "Generated $outfile (split at placeholder)\n";

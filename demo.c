@@ -69,6 +69,7 @@ int main() {
             }
         }
     }
+    return 0;
     busy_wait(0.75);
 
     // Second parallel region

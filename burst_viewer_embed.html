@@ -17,19 +17,9 @@
   </style>
 </head>
 <body>
-<<<<<<< Updated upstream
   <h3>Burst visualiser</h3>
   <div class="controls">
     <div class="row">
-=======
-  <h3>Burst visualiser (single-file)</h3>
-  <div class="controls">
-    <div class="row">
-      <label class="btn" for="file">Load file</label>
-      <input id="file" type="file" accept="*/*">
-    </div>
-    <div class="row">
->>>>>>> Stashed changes
       <label for="units">Units</label>
       <select id="units">
         <option value="1">us</option>
@@ -168,10 +158,6 @@
     Plotly.newPlot('plot', traces, layout, {responsive:true});
   }
 
-<<<<<<< Updated upstream
-=======
-  const fileInput = document.getElementById('file');
->>>>>>> Stashed changes
   const unitsSel = document.getElementById('units');
   let currentBursts = [];
 
@@ -179,7 +165,6 @@
     render(currentBursts, Number(unitsSel.value), document.querySelector('input[name=colorby]:checked').value);
   }
 
-<<<<<<< Updated upstream
   unitsSel.addEventListener('change', updatePlot);
   document.querySelectorAll('input[name=colorby]').forEach(r=>r.addEventListener('change', updatePlot));
   document.addEventListener('DOMContentLoaded', function(){
@@ -192,21 +177,5 @@
   });
   </script>
   <!-- EVENT_DATA_PLACEHOLDER --> 
-=======
-  fileInput.addEventListener('change', e=>{
-    const f = e.target.files[0];
-    if(!f) return;
-    const reader = new FileReader();
-    reader.onload = ev =>{
-      currentBursts = parseContent(ev.target.result);
-      updatePlot();
-    };
-    reader.readAsText(f);
-  });
-
-  unitsSel.addEventListener('change', updatePlot);
-  document.querySelectorAll('input[name=colorby]').forEach(r=>r.addEventListener('change', updatePlot));
-  </script>
->>>>>>> Stashed changes
 </body>
 </html>
