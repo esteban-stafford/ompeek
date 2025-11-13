@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="en">
 <head>
@@ -22,17 +23,17 @@
     <div class="row">
       <label for="units">Units</label>
       <select id="units">
-        <option value="1">us</option>
-        <option value="0.001">ms</option>
         <option value="0.000001">s</option>
+        <option value="0.001">ms</option>
+        <option value="1">us</option>
       </select>
     </div>
     <div class="row">
       <label>Color by</label>
       <label><input type="radio" name="colorby" value="type" checked> type</label>
       <label><input type="radio" name="colorby" value="codeptr"> codeptr</label>
+      <label><input type="radio" name="colorby" value="user"> user</label>
     </div>
-  </div>
 
   <div id="plot"></div>
 
@@ -55,14 +56,16 @@
     const bursts = [];
     for(const line of lines){
       const parts = line.split(':');
-      if(parts.length < 5) continue;
+      if(parts.length < 7) continue;
       const thread = parts[0];
       const start = Number(parts[1]);
       const end = Number(parts[2]);
       const type = parts[3];
-      const codeptr = parts.slice(4).join(':');
+      const codeptr = parts[4];
+      const user_id = Number(parts[5]);
+      const user_level = Number(parts[6]);
       if(Number.isFinite(start) && Number.isFinite(end)){
-        bursts.push({thread, start, end, type, codeptr});
+        bursts.push({thread, start, end, type, codeptr, user_id, user_level});
       }
     }
     return bursts;
@@ -80,82 +83,142 @@
     return map;
   }
 
-  function render(bursts, unitsFactor, colorBy){
-    if(!bursts || bursts.length===0){
+   /* function userColor(uid, lvl) {
+      const hue = (uid * 137) % 360; // pseudo-random hue spacing
+      const light = (lvl - user_level_min) / (user_level_max - user_level_min);
+      return `hsl(${hue}, 100%, ${50+50*(light)}%)`; // darker for low level
+    } */
+  function render(bursts, unitsFactor, colorBy) {
+    if (!bursts || bursts.length === 0) {
       Plotly.purge('plot');
       return;
     }
-    const threads = unique(bursts.map(b=>b.thread)).sort((a,b)=>Number(a)-Number(b));
-    const yMap = {};
-    threads.forEach((t,i)=> yMap[t]=(i+1));
 
-    const groups = {};
-    for(const b of bursts){
-      const key = (colorBy==='type')? b.type : b.codeptr;
-      if(!groups[key]) groups[key]=[];
-      groups[key].push(b);
+    const threads = [...new Set(bursts.map(b => b.thread))].sort((a, b) => Number(a) - Number(b));
+    const yMap = {};
+    threads.forEach((t, i) => (yMap[t] = i + 1));
+
+    function userColor(uid, lvl) {
+        const hue = (uid * 137) % 360;
+        const light = Math.max(0, Math.min(lvl, 1));
+        const lightPct = 20 + 80 * light; // 0→dark,1→bright
+        return `hsl(${hue},100%,${lightPct / 2}%)`;
     }
 
     const traces = [];
-    for(const key of Object.keys(groups)){
-      const segsX = [];
-      const segsY = [];
-      const hoverForPoints = [];
-      for(const b of groups[key]){
-        segsX.push(b.start*unitsFactor, b.end*unitsFactor, null);
-        segsY.push(yMap[b.thread], yMap[b.thread], null);
-        const typeWord = TYPE_NAMES[b.type] || b.type;
-        const unitLabel = (unitsFactor===1? 'us' : unitsFactor===0.001? 'ms' : 's');
-        const t = `thread: ${b.thread}<br>start: ${(b.start*unitsFactor).toFixed(3)} ${unitLabel}<br>end: ${(b.end*unitsFactor).toFixed(3)} ${unitLabel}<br>duration: ${((b.end - b.start)*unitsFactor).toFixed(3)} ${unitLabel}<br>type: ${typeWord}<br>codeptr: ${b.codeptr}`;
-        hoverForPoints.push(t, t, '');
+
+    if (colorBy === 'user') {
+      // find range of user_level in current data
+      const user_level_min = Math.min(...bursts.map(b => b.user_level));
+      const user_level_max = Math.max(...bursts.map(b => b.user_level));
+
+      function userColor(uid, lvl) {
+        const hue = (uid * 137) % 360;
+        // normalise to [0,1]
+        const light = (lvl - user_level_min) / (user_level_max - user_level_min || 1);
+        const lightPct = 100 - 55 * Math.max(0, Math.min(light, 1));
+        return `hsl(${hue}, 100%, ${lightPct}%)`;
       }
-      traces.push({
-        x: segsX,
-        y: segsY,
-        mode: 'lines',
-        line: {width:6},
-        name: colorBy==='type' ? (TYPE_NAMES[key] || key) : key,
-        hoverinfo: 'text',
-        hoverlabel: {align:'left'},
-        text: hoverForPoints,
-        showlegend: true
-      });
+
+      // one trace per burst so each uses its own brightness
+      for (const b of bursts) {
+        const x = [b.start * unitsFactor, b.end * unitsFactor];
+        const y = [yMap[b.thread], yMap[b.thread]];
+        const typeWord = TYPE_NAMES[b.type] || b.type;
+        const unitLabel =
+          unitsFactor === 1 ? 'us' : unitsFactor === 0.001 ? 'ms' : 's';
+        const txt = `thread: ${b.thread}<br>
+                    start: ${(b.start * unitsFactor).toFixed(3)} ${unitLabel}<br>
+                    end: ${(b.end * unitsFactor).toFixed(3)} ${unitLabel}<br>
+                    duration: ${((b.end - b.start) * unitsFactor).toFixed(3)} ${unitLabel}<br>
+                    type: ${typeWord}<br>
+                    codeptr: ${b.codeptr}<br>
+                    user_id: ${b.user_id}<br>
+                    user_level: ${b.user_level}`;
+        traces.push({
+          x, y,
+          mode: 'lines',
+          line: { width: 6, color: userColor(b.user_id, b.user_level) },
+          name: `user_${b.user_id}`,
+          hoverinfo: 'text',
+          hoverlabel: { align: 'left' },
+          text: [txt],
+          showlegend: false
+        });
+      }
+    } else {
+      // original grouping by type or codeptr
+      const groups = {};
+      for (const b of bursts) {
+        const key = colorBy === 'type' ? b.type : b.codeptr;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(b);
+      }
+
+      const cmap = buildColorMap(Object.keys(groups));
+      for (const key of Object.keys(groups)) {
+        const segsX = [], segsY = [], hoverForPoints = [];
+        for (const b of groups[key]) {
+          segsX.push(b.start * unitsFactor, b.end * unitsFactor, null);
+          segsY.push(yMap[b.thread], yMap[b.thread], null);
+          const typeWord = TYPE_NAMES[b.type] || b.type;
+          const unitLabel =
+            unitsFactor === 1 ? 'us' : unitsFactor === 0.001 ? 'ms' : 's';
+          const t = `thread: ${b.thread}<br>start: ${(b.start * unitsFactor).toFixed(3)} ${unitLabel}<br>end: ${(b.end * unitsFactor).toFixed(3)} ${unitLabel}<br>duration: ${((b.end - b.start) * unitsFactor).toFixed(3)} ${unitLabel}<br>type: ${typeWord}<br>codeptr: ${b.codeptr}`;
+          hoverForPoints.push(t, t, '');
+        }
+        traces.push({
+          x: segsX,
+          y: segsY,
+          mode: 'lines',
+          line: { width: 6, color: cmap[key] },
+          name: colorBy === 'type' ? TYPE_NAMES[key] || key : key,
+          hoverinfo: 'text',
+          hoverlabel: { align: 'left' },
+          text: hoverForPoints,
+          showlegend: true
+        });
+      }
     }
 
-    const keys = Object.keys(groups);
-    const cmap = buildColorMap(keys);
-    traces.forEach(t=> t.line.color = cmap[t.name]);
-
-    const crossX = [], crossY = [];
-    for(const b of bursts){
-      crossX.push(b.start*unitsFactor);
-      crossY.push(yMap[b.thread]);
-    }
-
+    // cross markers
+    const crossX = bursts.map(b => b.start * unitsFactor);
+    const crossY = bursts.map(b => yMap[b.thread]);
     traces.push({
       x: crossX,
       y: crossY,
       mode: 'markers',
-      marker: {symbol: 'cross-thin-open', size: 8, color: '#000'},
+      marker: { symbol: 'cross-thin-open', size: 8, color: '#000' },
       hoverinfo: 'none',
       showlegend: false
     });
 
     const layout = {
       title: 'Bursts',
-      xaxis: {title: 'Time (' + (unitsFactor===1? 'us' : unitsFactor===0.001? 'ms' : 's') + ')'},
+      xaxis: {
+        title:
+          'Time (' +
+          (unitsFactor === 1 ? 'us' : unitsFactor === 0.001 ? 'ms' : 's') +
+          ')'
+      },
       yaxis: {
         tickmode: 'array',
-        tickvals: threads.map(t=>yMap[t]),
+        tickvals: threads.map(t => yMap[t]),
         ticktext: threads,
         autorange: 'reversed'
       },
-      legend: {orientation: 'h', yanchor: 'top', y: -0.2, xanchor: 'center', x: 0.5},
+      legend: {
+        orientation: 'h',
+        yanchor: 'top',
+        y: -0.2,
+        xanchor: 'center',
+        x: 0.5
+      },
       hovermode: 'closest',
-      margin: {l:80, r:30, t:40, b:80}
+      margin: { l: 80, r: 30, t: 40, b: 80 }
     };
 
-    Plotly.newPlot('plot', traces, layout, {responsive:true});
+    Plotly.newPlot('plot', traces, layout, { responsive: true });
   }
 
   const unitsSel = document.getElementById('units');
@@ -176,6 +239,6 @@
     }
   });
   </script>
-  <!-- EVENT_DATA_PLACEHOLDER --> 
+<!-- EVENT_DATA_PLACEHOLDER --> 
 </body>
 </html>

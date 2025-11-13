@@ -17,7 +17,7 @@ libompt_tool_event.so: ompt_tool_event.cpp burst_viewer_embed.cpp
 	clang++ -fPIC -shared -o libompt_tool_event.so $<
 
 # Rule to compile each .c into a binary
-%: %.c
+%: %.c burst.h
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 # Clean up

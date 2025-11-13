@@ -87,18 +87,20 @@ int main() {
             int seq[5];
             for (int seq_id = 0; seq_id < 5; seq_id++) {
                 seq[seq_id] = seq_id;
+                burst_set_id(99,seq_id);
+                busy_wait(0.5);
                 for (int step = 0; step < 3; step++) {
                     double duration = 0.25 + 0.25 * seq_id + 0.25 * step;
                     #pragma omp task depend(inout: seq[seq_id]) firstprivate(seq_id, step, duration)
                     {
                         int id = seq_id * 10 + step;
-                        burst_set_id(id);
+                        burst_set_id(seq_id, step);
                         apply_filter(id, duration);
                     }
                 }
             }
+            #pragma omp taskwait
         }
-        #pragma omp taskwait
 
         #pragma omp single
         {

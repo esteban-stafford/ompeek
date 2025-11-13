@@ -36,7 +36,8 @@ struct Burst {
     std::chrono::steady_clock::time_point end_time;
     BurstType type = BURST_TYPE_UNKNOWN;
     const void* codeptr = nullptr;
-    int user_data = 0;
+    int user_id = 0;
+    int user_level = 0;
 };
 
 struct TaskInfo {
@@ -106,7 +107,8 @@ void log_burst(const Burst& burst, int thread_id) {
           << ":" << end_rel
           << ":" << burst.type
           << ":" << burst.codeptr
-          << ":" << burst.user_data
+          << ":" << burst.user_id
+          << ":" << burst.user_level
           << std::endl;
 }
 
@@ -240,11 +242,13 @@ static void on_mutex_released(
     burst.start_time = now;
 }
 
-static void burst_set_id_tool(int id)
+extern "C" void burst_set_id_tool(int id, int level)
 {
+  printf("[OMPT tool] received id = %d\n", id);
   int thread_id = omp_get_thread_num();
   Burst& burst = thread_bursts[thread_id].top();
-  burst.user_data = id;
+  burst.user_id = id;
+  burst.user_level = level;
 }
 
 
@@ -265,6 +269,8 @@ static int ompt_initialize(
    ompt_set_callback(ompt_callback_mutex_acquire, (ompt_callback_t)&on_mutex_acquire);
    ompt_set_callback(ompt_callback_mutex_acquired, (ompt_callback_t)&on_mutex_acquired);
    ompt_set_callback(ompt_callback_mutex_released, (ompt_callback_t)&on_mutex_released);
+
+   auto dd = &burst_set_id_tool;
 
    return 1;
 }
