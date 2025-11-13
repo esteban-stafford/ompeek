@@ -99,13 +99,24 @@
     threads.forEach((t, i) => (yMap[t] = i + 1));
 
     function userColor(uid, lvl) {
-        const hue = (uid * 137) % 360;
-        const light = Math.max(0, Math.min(lvl, 1));
-        const lightPct = 20 + 80 * light; // 0→dark,1→bright
-        return `hsl(${hue},100%,${lightPct / 2}%)`;
+      const hue = (uid * 137) % 360;
+      const light = Math.max(0, Math.min(lvl, 1));
+      const lightPct = 20 + 80 * light; // 0→dark,1→bright
+      return `hsl(${hue},100%,${lightPct / 2}%)`;
     }
 
     const traces = [];
+
+    const crossX = bursts.map(b => b.start * unitsFactor);
+    const crossY = bursts.map(b => yMap[b.thread]);
+    traces.push({
+      x: crossX,
+      y: crossY,
+      mode: 'markers',
+      marker: { symbol: 'cross-thin-open', size: 8, color: '#000' },
+      hoverinfo: 'none',
+      showlegend: false
+    });
 
     if (colorBy === 'user') {
       // find range of user_level in current data
@@ -128,13 +139,13 @@
         const unitLabel =
           unitsFactor === 1 ? 'us' : unitsFactor === 0.001 ? 'ms' : 's';
         const txt = `thread: ${b.thread}<br>
-                    start: ${(b.start * unitsFactor).toFixed(3)} ${unitLabel}<br>
-                    end: ${(b.end * unitsFactor).toFixed(3)} ${unitLabel}<br>
-                    duration: ${((b.end - b.start) * unitsFactor).toFixed(3)} ${unitLabel}<br>
-                    type: ${typeWord}<br>
-                    codeptr: ${b.codeptr}<br>
-                    user_id: ${b.user_id}<br>
-                    user_level: ${b.user_level}`;
+                     start: ${(b.start * unitsFactor).toFixed(3)} ${unitLabel}<br>
+                     end: ${(b.end * unitsFactor).toFixed(3)} ${unitLabel}<br>
+                     duration: ${((b.end - b.start) * unitsFactor).toFixed(3)} ${unitLabel}<br>
+                     type: ${typeWord}<br>
+                     codeptr: ${b.codeptr}<br>
+                     user_id: ${b.user_id}<br>
+                     user_level: ${b.user_level}`;
         traces.push({
           x, y,
           mode: 'lines',
@@ -180,18 +191,6 @@
         });
       }
     }
-
-    // cross markers
-    const crossX = bursts.map(b => b.start * unitsFactor);
-    const crossY = bursts.map(b => yMap[b.thread]);
-    traces.push({
-      x: crossX,
-      y: crossY,
-      mode: 'markers',
-      marker: { symbol: 'cross-thin-open', size: 8, color: '#000' },
-      hoverinfo: 'none',
-      showlegend: false
-    });
 
     const layout = {
       title: 'Bursts',
