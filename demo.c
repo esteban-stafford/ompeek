@@ -100,6 +100,7 @@ int main() {
                 }
             }
             #pragma omp taskwait
+            busy_wait(0.25);
         }
 
         #pragma omp single

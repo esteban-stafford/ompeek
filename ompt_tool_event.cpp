@@ -242,6 +242,39 @@ static void on_mutex_released(
     burst.start_time = now;
 }
 
+static void on_sync_region(
+    ompt_sync_region_t kind,
+    ompt_scope_endpoint_t endpoint,
+    ompt_data_t *parallel_data,
+    ompt_data_t *task_data,
+    const void *codeptr_ra)
+{
+    if (kind != ompt_sync_region_taskwait)
+      return;
+    int thread_id = omp_get_thread_num();
+    auto now = std::chrono::steady_clock::now();
+
+    if (endpoint == ompt_scope_begin) {
+        Burst& burst = thread_bursts[thread_id].top();
+        burst.end_time = now;
+        log_burst(burst, thread_id);
+
+        Burst& wait_burst = thread_bursts[thread_id].emplace();
+        wait_burst.start_time = now;
+        wait_burst.type = BURST_TYPE_WAIT;
+        wait_burst.codeptr = codeptr_ra;
+    } else if (endpoint == ompt_scope_end) {
+        Burst& wait_burst = thread_bursts[thread_id].top();
+        wait_burst.end_time = now;
+        // log_burst(wait_burst, thread_id);
+
+        thread_bursts[thread_id].pop();
+
+        Burst& resumed = thread_bursts[thread_id].top();
+        resumed.start_time = now;
+    }
+}
+
 extern "C" void burst_set_id_tool(int id, int level)
 {
   printf("[OMPT tool] received id = %d\n", id);
@@ -250,7 +283,6 @@ extern "C" void burst_set_id_tool(int id, int level)
   burst.user_id = id;
   burst.user_level = level;
 }
-
 
 // Initialization
 static int ompt_initialize(
@@ -269,6 +301,7 @@ static int ompt_initialize(
    ompt_set_callback(ompt_callback_mutex_acquire, (ompt_callback_t)&on_mutex_acquire);
    ompt_set_callback(ompt_callback_mutex_acquired, (ompt_callback_t)&on_mutex_acquired);
    ompt_set_callback(ompt_callback_mutex_released, (ompt_callback_t)&on_mutex_released);
+   ompt_set_callback(ompt_callback_sync_region, (ompt_callback_t)&on_sync_region);
 
    auto dd = &burst_set_id_tool;
 
