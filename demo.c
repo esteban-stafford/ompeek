@@ -4,10 +4,23 @@
 #include <unistd.h>
 #include "burst.h"
 
+#define DEBUG 0
+
 void busy_wait(double seconds) {
-    double start = omp_get_wtime();
-    while (omp_get_wtime() - start < seconds);
+  double start = omp_get_wtime();
+#if DEBUG
+  int event_id, event_level;
+  burst_get_id(&event_id, &event_level);
+  int thread_id = omp_get_thread_num();
+  printf("  [busy_wait] thread=%d id=%d level=%d start %.2fs\n", thread_id, event_id, event_level, seconds);
+#endif
+  while (omp_get_wtime() - start < seconds);
+#if DEBUG
+  thread_id = omp_get_thread_num();
+  printf("  [busy_wait] thread=%d id=%d level=%d end   %.2fs\n", thread_id, event_id, event_level, seconds);
+#endif
 }
+
 
 void apply_filter(int id, double duration) {
     printf("Task %d started (%.2fs)\n", id, duration);
@@ -70,10 +83,11 @@ int main() {
             }
         }
     }
-    busy_wait(0.75);
 
+    printf("Serial (0.75s)\n");
+    busy_wait(0.75); 
     // Second parallel region
-    #pragma omp parallel
+    #pragma omp parallel num_threads(2)
     {
         #pragma omp for nowait
         for (int i = 0; i < 8; i++) {
@@ -107,6 +121,47 @@ int main() {
         {
             printf("Single section (0.25s)\n");
             busy_wait(0.25);
+        } 
+
+        #pragma omp single
+        {
+          int i = 0;
+          do 
+          {
+            burst_set_id(1, i);
+            printf("Single pre %d (0.25s)\n", i);
+            busy_wait(0.25);
+
+            #pragma omp task firstprivate(i)
+            {
+              burst_set_id(2, i);
+              printf("  Task 2.%d start (0.75s)\n", i);
+              busy_wait(.75);
+            }
+            #pragma omp task firstprivate(i)
+            {
+              burst_set_id(3, i);
+              printf("  Task 3.%d start (1.0s)\n", i);
+              busy_wait(1.0);
+            }
+            #pragma omp task firstprivate(i)
+            {
+              burst_set_id(4, i);
+              printf("  Task 4.%d start (1.0s)\n", i);
+              busy_wait(1.0);
+            }
+            #pragma omp taskwait
+            #pragma omp task firstprivate(i)
+            {
+              burst_set_id(5, i);
+              printf("  Task 5.%d start (0.5s)\n", i);
+              busy_wait(0.5);
+            }
+          } while (i++ < 3);
+          #pragma omp taskwait
+          burst_set_id(6, 0);
+          printf("Single post (0.33s)\n");
+          busy_wait(0.33);
         }
     }
 

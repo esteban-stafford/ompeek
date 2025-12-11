@@ -1,3 +1,6 @@
 make
 OMP_TOOL_LIBRARIES=./libompt_tool_event.so ./demo | tee >(grep ':' > demo.trace)
 knit analyse_trace.Rmd 
+
+
+TOOL_FILE_FORMAT=html LD_PRELOAD=./libompt_tool_event.so OMP_TOOL_LIBRARIES=./libompt_tool_event.so ./demo

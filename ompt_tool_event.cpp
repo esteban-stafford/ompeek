@@ -99,6 +99,8 @@ static void close_log_file() {
 }
 
 void log_burst(const Burst& burst, int thread_id) {
+  if(burst.type == BURST_TYPE_WAIT)
+    return;
   std::lock_guard<std::mutex> guard(logMutex);
   auto begin_rel = std::chrono::duration_cast<std::chrono::microseconds>(burst.start_time - reference_time).count();
   auto end_rel = std::chrono::duration_cast<std::chrono::microseconds>(burst.end_time - reference_time).count();
@@ -176,6 +178,7 @@ static void on_task_schedule(
         burst.end_time = now;
         log_burst(burst, thread_id);
         thread_tasks[thread_id].active = false;
+        thread_bursts[thread_id].pop();
     }
 
     // Start new task only if valid
@@ -216,7 +219,7 @@ static void on_mutex_acquired(
     Burst& wait_burst = thread_bursts[thread_id].top();
     auto now = std::chrono::steady_clock::now();
     wait_burst.end_time = now;
-    //log_burst(wait_burst, thread_id);
+    log_burst(wait_burst, thread_id);
 
     // These two stack operations could be combined, but keeping them separate for clarity
     thread_bursts[thread_id].pop();
@@ -266,7 +269,7 @@ static void on_sync_region(
     } else if (endpoint == ompt_scope_end) {
         Burst& wait_burst = thread_bursts[thread_id].top();
         wait_burst.end_time = now;
-        // log_burst(wait_burst, thread_id);
+        log_burst(wait_burst, thread_id);
 
         thread_bursts[thread_id].pop();
 
@@ -277,11 +280,23 @@ static void on_sync_region(
 
 extern "C" void burst_set_id_tool(int id, int level)
 {
-  printf("[OMPT tool] received id = %d\n", id);
   int thread_id = omp_get_thread_num();
   Burst& burst = thread_bursts[thread_id].top();
   burst.user_id = id;
   burst.user_level = level;
+}
+
+extern "C" void burst_get_id_tool(int *id, int *level)
+{
+  int thread_id = omp_get_thread_num();
+  if (thread_bursts[thread_id].empty()) {
+    *id = -1;
+    *level = -1;
+  } else {
+    Burst& burst = thread_bursts[thread_id].top();
+    *id = burst.user_id;
+    *level = burst.user_level;
+  }
 }
 
 // Initialization
