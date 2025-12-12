@@ -35,10 +35,11 @@ void apply_filter(int id, double duration) {
 }
 
 int main() {
-    omp_set_num_threads(4);
+    printf("Serial (0.75s)\n");
+    busy_wait(0.75); 
 
     // First parallel region
-    #pragma omp parallel
+    #pragma omp parallel num_threads(4)
     {
         #pragma omp single
         {
@@ -164,6 +165,7 @@ int main() {
           busy_wait(0.33);
         }
     }
+    busy_wait(0.33);
 
     return 0;
 }

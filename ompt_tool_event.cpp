@@ -10,6 +10,7 @@
 #include <string>
 #include <cstring>
 #include <sstream>
+#include <cstdio>
 
 #include "burst_viewer_embed.cpp"
 
@@ -21,6 +22,7 @@ static std::string g_tool_filename;
 static OutputFormat g_tool_format = OutputFormat::LOG;
 
 typedef enum {
+    BURST_TYPE_SERIAL,
     BURST_TYPE_FOR,
     BURST_TYPE_SECTION,
     BURST_TYPE_SINGLE,
@@ -278,6 +280,36 @@ static void on_sync_region(
     }
 }
 
+static void on_parallel_begin(
+    ompt_data_t *parallel_data,
+    const ompt_frame_t *parent_frame,
+    ompt_data_t *task_data,
+    unsigned int requested_team_size,
+    const void *codeptr_ra)
+{
+   auto now = std::chrono::steady_clock::now();
+   const int thread_id = 0;
+   Burst& burst = thread_bursts[thread_id].top();
+   burst.end_time = now;
+   log_burst(burst, thread_id);
+   thread_tasks[thread_id].active = false;
+   thread_bursts[thread_id].pop();
+}
+
+static void on_parallel_end(
+    ompt_data_t *parallel_data,
+    ompt_data_t *task_data,
+    const void *codeptr_ra)
+{
+   auto now = std::chrono::steady_clock::now();
+   const int thread_id = 0;
+   Burst& burst = thread_bursts[thread_id].emplace();
+   burst.start_time = now;
+   burst.type = BURST_TYPE_SERIAL;
+   burst.codeptr = codeptr_ra;
+   thread_tasks[thread_id].active = true;
+}
+
 extern "C" void burst_set_id_tool(int id, int level)
 {
   int thread_id = omp_get_thread_num();
@@ -305,11 +337,16 @@ static int ompt_initialize(
     int initial_device_num,
     ompt_data_t *tool_data)
 {
+   std::cerr << "[OMPT Tool] initialize called. Initial device num: "
+             << initial_device_num << std::endl;
+
    init_tool_output_config();
    open_log_file();
    reference_time = std::chrono::steady_clock::now();
    auto ompt_set_callback = (ompt_set_callback_t)lookup("ompt_set_callback");
 
+   ompt_set_callback(ompt_callback_parallel_begin, (ompt_callback_t) on_parallel_begin);
+   ompt_set_callback(ompt_callback_parallel_end, (ompt_callback_t) on_parallel_end);
    ompt_set_callback(ompt_callback_work, (ompt_callback_t)&on_work);
    ompt_set_callback(ompt_callback_task_create, (ompt_callback_t)&on_task_create);
    ompt_set_callback(ompt_callback_task_schedule, (ompt_callback_t)&on_task_schedule);
@@ -320,11 +357,19 @@ static int ompt_initialize(
 
    auto dd = &burst_set_id_tool;
 
+   auto now = std::chrono::steady_clock::now();
+   const int thread_id = 0;
+   Burst& burst = thread_bursts[thread_id].emplace();
+   burst.start_time = now;
+   burst.type = BURST_TYPE_SERIAL;
+   burst.codeptr = nullptr;
+   thread_tasks[thread_id].active = true;
+
    return 1;
 }
 
 static void ompt_finalize(ompt_data_t *tool_data) {
-    close_log_file();
+   //close_log_file();
 }
 
 extern "C" ompt_start_tool_result_t* ompt_start_tool(
@@ -341,3 +386,15 @@ extern "C" ompt_start_tool_result_t* ompt_start_tool(
     };
     return &ompt_start_tool_result;
 }
+
+__attribute__((destructor))
+static void end() {
+   auto now = std::chrono::steady_clock::now();
+   const int thread_id = 0;
+   Burst& burst = thread_bursts[thread_id].top();
+   burst.end_time = now;
+   log_burst(burst, thread_id);
+   thread_tasks[thread_id].active = false;
+   thread_bursts[thread_id].pop();
+   close_log_file();
+} 
