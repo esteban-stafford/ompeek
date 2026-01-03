@@ -69,10 +69,10 @@ static void init_tool_output_config() {
     g_tool_filename = file_env;
   else
     g_tool_filename = (g_tool_format == OutputFormat::HTML)
-      ? "omp_events.html"
-      : "omp_events.log";
+      ? "ompeek.html"
+      : "ompeek.log";
 
-  std::cerr << "[ompt_tool_event] Output file: " << g_tool_filename
+  std::cerr << "[OMPeek] Output file: " << g_tool_filename
     << " (" << (g_tool_format == OutputFormat::HTML ? "HTML" : "LOG") << ")\n";
 }
 
@@ -80,7 +80,7 @@ static void open_log_file() {
   if (!logFile.is_open()) {
     logFile.open(g_tool_filename, std::ios::out | std::ios::trunc);
     if (!logFile) {
-      std::cerr << "[ompt_tool_event] Failed to open output file: "
+      std::cerr << "[OMPeek] Failed to open output file: "
         << g_tool_filename << "\n";
     }
   }
@@ -337,7 +337,7 @@ static int ompt_initialize(
     int initial_device_num,
     ompt_data_t *tool_data)
 {
-   std::cerr << "[OMPT Tool] initialize called. Initial device num: "
+   std::cerr << "[OMPeek] initialize called. Initial device num: "
              << initial_device_num << std::endl;
 
    init_tool_output_config();
@@ -376,7 +376,7 @@ extern "C" ompt_start_tool_result_t* ompt_start_tool(
     unsigned int omp_version,
     const char *runtime_version)
 {
-    std::cerr << "[OMPT Tool] Library loaded. OMPT version: " << omp_version
+    std::cerr << "[OMPeek] Library loaded. OMPT version: " << omp_version
               << ", Runtime version: " << runtime_version << std::endl;
 
     static ompt_start_tool_result_t ompt_start_tool_result = {

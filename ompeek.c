@@ -138,7 +138,7 @@ static void on_task_end(ompt_data_t *task_data)
 }
 
 static void ompt_finalize(ompt_data_t *tool_data) {
-    printf("OMPT tool finalized\n");
+    printf("OMPeek finalized\n");
 }
 
 static int ompt_initialize(
