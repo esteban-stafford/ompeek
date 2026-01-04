@@ -17,7 +17,7 @@ libompeek.so: ompeek.cpp burst_viewer_embed.cpp
 	clang++ -fPIC -shared -o libompeek.so $<
 
 # Rule to compile each .c into a binary
-%: %.c burst.h
+%: %.c ompeek.h
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 # Clean up

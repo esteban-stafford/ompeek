@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <omp.h>
 #include <unistd.h>
-#include "burst.h"
+#include "ompeek.h"
 
 #define DEBUG 0
 
@@ -10,7 +10,7 @@ void busy_wait(double seconds) {
   double start = omp_get_wtime();
 #if DEBUG
   int event_id, event_level;
-  burst_get_id(&event_id, &event_level);
+  ompeek_get_id(&event_id, &event_level);
   int thread_id = omp_get_thread_num();
   printf("  [busy_wait] thread=%d id=%d level=%d start %.2fs\n", thread_id, event_id, event_level, seconds);
 #endif
@@ -102,14 +102,14 @@ int main() {
             int seq[5];
             for (int seq_id = 0; seq_id < 5; seq_id++) {
                 seq[seq_id] = seq_id;
-                burst_set_id(99,seq_id);
+                ompeek_set_id(99,seq_id);
                 busy_wait(0.5);
                 for (int step = 0; step < 3; step++) {
                     double duration = 0.25 + 0.25 * seq_id + 0.25 * step;
                     #pragma omp task depend(inout: seq[seq_id]) firstprivate(seq_id, step, duration)
                     {
                         int id = seq_id * 10 + step;
-                        burst_set_id(seq_id, step);
+                        ompeek_set_id(seq_id, step);
                         apply_filter(id, duration);
                     }
                 }
@@ -129,38 +129,38 @@ int main() {
           int i = 0;
           do 
           {
-            burst_set_id(1, i);
+            ompeek_set_id(1, i);
             printf("Single pre %d (0.25s)\n", i);
             busy_wait(0.25);
 
             #pragma omp task firstprivate(i)
             {
-              burst_set_id(2, i);
+              ompeek_set_id(2, i);
               printf("  Task 2.%d start (0.75s)\n", i);
               busy_wait(.75);
             }
             #pragma omp task firstprivate(i)
             {
-              burst_set_id(3, i);
+              ompeek_set_id(3, i);
               printf("  Task 3.%d start (1.0s)\n", i);
               busy_wait(1.0);
             }
             #pragma omp task firstprivate(i)
             {
-              burst_set_id(4, i);
+              ompeek_set_id(4, i);
               printf("  Task 4.%d start (1.0s)\n", i);
               busy_wait(1.0);
             }
             #pragma omp taskwait
             #pragma omp task firstprivate(i)
             {
-              burst_set_id(5, i);
+              ompeek_set_id(5, i);
               printf("  Task 5.%d start (0.5s)\n", i);
               busy_wait(0.5);
             }
           } while (i++ < 3);
           #pragma omp taskwait
-          burst_set_id(6, 0);
+          ompeek_set_id(6, 0);
           printf("Single post (0.33s)\n");
           busy_wait(0.33);
         }

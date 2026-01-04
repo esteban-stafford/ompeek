@@ -310,7 +310,7 @@ static void on_parallel_end(
    thread_tasks[thread_id].active = true;
 }
 
-extern "C" void burst_set_id_tool(int id, int level)
+extern "C" void ompeek_burst_set_id(int id, int level)
 {
   int thread_id = omp_get_thread_num();
   Burst& burst = thread_bursts[thread_id].top();
@@ -318,7 +318,7 @@ extern "C" void burst_set_id_tool(int id, int level)
   burst.user_level = level;
 }
 
-extern "C" void burst_get_id_tool(int *id, int *level)
+extern "C" void ompeek_burst_get_id(int *id, int *level)
 {
   int thread_id = omp_get_thread_num();
   if (thread_bursts[thread_id].empty()) {
@@ -355,7 +355,7 @@ static int ompt_initialize(
    ompt_set_callback(ompt_callback_mutex_released, (ompt_callback_t)&on_mutex_released);
    ompt_set_callback(ompt_callback_sync_region, (ompt_callback_t)&on_sync_region);
 
-   auto dd = &burst_set_id_tool;
+   auto dd = &ompeek_burst_get_id;
 
    auto now = std::chrono::steady_clock::now();
    const int thread_id = 0;
