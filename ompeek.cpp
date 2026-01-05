@@ -56,8 +56,8 @@ std::mutex logMutex;
 static std::ofstream logFile;
 
 static void init_tool_output_config() {
-  const char* fmt_env = std::getenv("TOOL_FILE_FORMAT");
-  const char* file_env = std::getenv("TOOL_FILENAME");
+  const char* fmt_env = std::getenv("OMPEEK_FILE_FORMAT");
+  const char* file_env = std::getenv("OMPEEK_FILENAME");
 
   std::string fmt = fmt_env ? fmt_env : "log";
   if (fmt == "html" || fmt == "HTML")
@@ -206,10 +206,13 @@ static void on_mutex_acquire(
     burst.end_time = now;
     log_burst(burst, thread_id);
 
+    Burst& parent_burst = thread_bursts[thread_id].top();
     Burst& wait_burst = thread_bursts[thread_id].emplace();
     wait_burst.start_time = now;
     wait_burst.type = BURST_TYPE_WAIT;
     wait_burst.codeptr = codeptr_ra;
+    wait_burst.user_id = parent_burst.user_id;
+    wait_burst.user_level = parent_burst.user_level;
 }
 
 static void on_mutex_acquired(
@@ -225,10 +228,13 @@ static void on_mutex_acquired(
 
     // These two stack operations could be combined, but keeping them separate for clarity
     thread_bursts[thread_id].pop();
+    Burst& parent_burst = thread_bursts[thread_id].top();
     Burst& critical_burst = thread_bursts[thread_id].emplace();
     critical_burst.start_time = now;
     critical_burst.type = BURST_TYPE_CRITICAL;
     critical_burst.codeptr = codeptr_ra;
+    critical_burst.user_id = parent_burst.user_id;
+    critical_burst.user_level = parent_burst.user_level;
 }
 
 static void on_mutex_released(

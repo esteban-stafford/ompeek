@@ -88,12 +88,13 @@ int main() {
     printf("Serial (0.75s)\n");
     busy_wait(0.75); 
     // Second parallel region
-    #pragma omp parallel num_threads(2)
+    #pragma omp parallel num_threads(4)
     {
         #pragma omp for nowait
         for (int i = 0; i < 8; i++) {
             double duration = 0.1 + i * 0.05;
             printf("Loop iteration %d (%.2fs)\n", i, duration);
+            ompeek_set_id(55,i);
             busy_wait(duration);
         }
 
