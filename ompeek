@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# ompeek — Launch an app with OMPEEK env vars and preloaded library
+
+set -euo pipefail
+
+realpath_portable() {
+  if command -v readlink >/dev/null 2>&1 && readlink -f "$1" >/dev/null 2>&1; then
+    readlink -f "$1"
+    return
+  fi
+  local target="$1"
+  local dir
+  while [ -L "$target" ]; do
+    dir="$(cd "$(dirname "$target")" && pwd)"
+    target="$(readlink "$target")"
+    case "$target" in
+      /*) ;;
+      *) target="$dir/$target" ;;
+    esac
+  done
+  dir="$(cd "$(dirname "$target")" && pwd)"
+  echo "$dir/$(basename "$target")"
+}
+
+SCRIPT_PATH="$(realpath_portable "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+
+FILENAME="${OMPEEK_FILENAME:-}"
+FILE_FORMAT="${OMPEEK_FILE_FORMAT:-}"
+LIB_NAME="libompeek.so"
+LIB_PATH_DEFAULT="${SCRIPT_DIR}/${LIB_NAME}"
+LIB_PATH="${OMP_TOOL_LIBRARIES:-$LIB_PATH_DEFAULT}"
+APP=""
+APP_ARGS=()
+
+show_help() {
+  cat <<'EOF'
+Usage:
+  ompeek-run.sh [options] [--] app [app-args...]
+
+Options:
+  --filename <name>       Value for OMPEEK_FILENAME (default: ompeek)
+  --file-format <fmt>     Value for OMPEEK_FILE_FORMAT (default: log)
+  -h, --help              Show this help
+
+Command:
+  app                     Target application to execute.
+
+Notes:
+- Use '--' to separate script options from app arguments.
+
+Examples:
+   ompeek --filename out.html --file-format html ./demo
+   ompeek --filename out.csv --file-format csv -- ./demo -v
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --filename)
+      [ $# -ge 2 ] || { echo "ERROR: --filename requires a value" >&2; exit 2; }
+      FILENAME="$2"; shift 2;;
+    --file-format)
+      [ $# -ge 2 ] || { echo "ERROR: --file-format requires a value" >&2; exit 2; }
+      FILE_FORMAT="$2"; shift 2;;
+    -h|--help)
+      show_help; exit 0;;
+    --)
+      shift
+      if [ $# -gt 0 ]; then
+        APP="$1"; shift
+        APP_ARGS=("$@")
+        set --
+      fi
+      break;;
+    -*)
+      echo "ERROR: Unknown option: $1" >&2
+      show_help; exit 2;;
+    *)
+      APP="$1"; shift
+      APP_ARGS=("$@")
+      set --
+      break;;
+  esac
+done
+
+if [ -z "${APP}" ]; then
+  echo "ERROR: No app specified and '${SCRIPT_DIR}/demo' not found." >&2
+  echo "       Provide an app: e.g. ./demo or /path/to/app" >&2
+  show_help
+  exit 2
+fi
+
+export OMPEEK_FILENAME="${FILENAME}"
+export OMPEEK_FILE_FORMAT="${FILE_FORMAT}"
+export OMP_TOOL_LIBRARIES="${LIB_PATH}"
+export LD_PRELOAD="${LIB_PATH}"
+
+exec "${APP}" "${APP_ARGS[@]}"
