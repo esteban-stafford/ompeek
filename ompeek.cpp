@@ -126,7 +126,8 @@ static void on_work(
 {
     int thread_id = omp_get_thread_num();
     if (endpoint == ompt_scope_begin) {
-        Burst& burst = thread_bursts[thread_id].emplace();
+        thread_bursts[thread_id].emplace();
+        Burst& burst = thread_bursts[thread_id].top();
         switch (work_type) {
             case ompt_work_loop:
                 burst.type = BURST_TYPE_FOR;
@@ -185,7 +186,8 @@ static void on_task_schedule(
 
     // Start new task only if valid
     if (next_task_data && next_task_data->ptr) {
-        Burst& burst = thread_bursts[thread_id].emplace();
+        thread_bursts[thread_id].emplace();
+        Burst& burst = thread_bursts[thread_id].top();
         burst.start_time = now;
         burst.type = BURST_TYPE_TASK;
         burst.codeptr = next_task_data->ptr;
@@ -207,7 +209,8 @@ static void on_mutex_acquire(
     log_burst(burst, thread_id);
 
     Burst& parent_burst = thread_bursts[thread_id].top();
-    Burst& wait_burst = thread_bursts[thread_id].emplace();
+    thread_bursts[thread_id].emplace();
+    Burst& wait_burst = thread_bursts[thread_id].top();
     wait_burst.start_time = now;
     wait_burst.type = BURST_TYPE_WAIT;
     wait_burst.codeptr = codeptr_ra;
@@ -229,7 +232,8 @@ static void on_mutex_acquired(
     // These two stack operations could be combined, but keeping them separate for clarity
     thread_bursts[thread_id].pop();
     Burst& parent_burst = thread_bursts[thread_id].top();
-    Burst& critical_burst = thread_bursts[thread_id].emplace();
+    thread_bursts[thread_id].emplace();
+    Burst& critical_burst = thread_bursts[thread_id].top();
     critical_burst.start_time = now;
     critical_burst.type = BURST_TYPE_CRITICAL;
     critical_burst.codeptr = codeptr_ra;
@@ -270,7 +274,8 @@ static void on_sync_region(
         burst.end_time = now;
         log_burst(burst, thread_id);
 
-        Burst& wait_burst = thread_bursts[thread_id].emplace();
+        thread_bursts[thread_id].emplace();
+        Burst& wait_burst = thread_bursts[thread_id].top();
         wait_burst.start_time = now;
         wait_burst.type = BURST_TYPE_WAIT;
         wait_burst.codeptr = codeptr_ra;
@@ -309,7 +314,8 @@ static void on_parallel_end(
 {
    auto now = std::chrono::steady_clock::now();
    const int thread_id = 0;
-   Burst& burst = thread_bursts[thread_id].emplace();
+   thread_bursts[thread_id].emplace();
+   Burst& burst = thread_bursts[thread_id].top();
    burst.start_time = now;
    burst.type = BURST_TYPE_SERIAL;
    burst.codeptr = codeptr_ra;
@@ -365,7 +371,8 @@ static int ompt_initialize(
 
    auto now = std::chrono::steady_clock::now();
    const int thread_id = 0;
-   Burst& burst = thread_bursts[thread_id].emplace();
+   thread_bursts[thread_id].emplace();
+   Burst& burst = thread_bursts[thread_id].top();
    burst.start_time = now;
    burst.type = BURST_TYPE_SERIAL;
    burst.codeptr = nullptr;
