@@ -12,11 +12,17 @@ my ($infile, $outfile) = @ARGV;
 
 open my $in, '<:encoding(UTF-8)', $infile
   or die "Cannot open $infile: $!";
-local $/ = undef;
-my $html = <$in>;
+my $html = do { local $/; <$in> };
 close $in;
 
-# Split HTML around placeholder
+open my $img_in, 'base64 ompeek.png |'
+  or die "Cannot open ompeek.png: $!";
+my $logo_base64 = do { local $/; <$img_in> };
+close $img_in;
+
+$html =~ s{<img\s+[^>]*src=["']ompeek\.png["'][^>]*>}
+             {<img src="data:image/png;base64,$logo_base64" alt="OMPeek Logo">}i;
+
 my $marker = '<!-- EVENT_DATA_PLACEHOLDER -->';
 my ($header, $footer) = split(/\Q$marker\E/, $html, 2);
 
