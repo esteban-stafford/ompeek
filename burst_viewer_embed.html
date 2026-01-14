@@ -47,7 +47,22 @@
 
   <div id="plot"></div>
 
-  <div class="small">Hover lines for details. Crosshair at burst start. X axis scaled by selected units.</div>
+  <div class="row" id="stats-row" style="gap:12px;flex-wrap:wrap;margin-top:8px">
+    <label>Serial time</label>
+    <input id="serialTime" type="number" step="any" style="width:120px">
+
+    <select id="serialUnits">
+      <option value="0.000001">s</option>
+      <option value="0.001">ms</option>
+      <option value="1">µs</option>
+    </select>
+  </div>
+  <div class="row" id="stats-row" style="gap:12px;flex-wrap:wrap;margin-top:8px">
+    <span>Speedup: <b id="speedup">–</b></span>
+    <span>Global efficiency: <b id="geff">–</b></span>
+    <span>Computation efficiency: <b id="ceff">–</b></span>
+    <span>Load balance: <b id="lbal">–</b></span>
+  </div>
 
   <script>
   const TYPE_NAMES = {
@@ -160,7 +175,7 @@
         traces.push({
           x, y,
           mode: 'lines',
-          line: { width: 6, color: userColor(b.user_id, b.user_level) },
+          line: { width: 20, color: userColor(b.user_id, b.user_level) },
           name: `user_${b.user_id}`,
           hoverinfo: 'text',
           hoverlabel: { align: 'left' },
@@ -193,7 +208,7 @@
           x: segsX,
           y: segsY,
           mode: 'lines',
-          line: { width: 6, color: cmap[key] },
+          line: { width: 20, color: cmap[key] },
           name: colorBy === 'type' ? TYPE_NAMES[key] || key : key,
           hoverinfo: 'text',
           hoverlabel: { align: 'left' },
@@ -229,6 +244,7 @@
     };
 
     Plotly.newPlot('plot', traces, layout, { responsive: true });
+    computeStats(b);
   }
 
   const unitsSel = document.getElementById('units');
@@ -237,6 +253,52 @@
   function updatePlot(){
     render(currentBursts, Number(unitsSel.value), document.querySelector('input[name=colorby]:checked').value);
   }
+
+  function computeStats(bursts){
+    if (!bursts.length) return;
+
+    const threads = [...new Set(bursts.map(b=>b.thread))];
+    const T = threads.length;
+
+    const perThread = {};
+    let sumAll = 0;
+    let maxEnd = 0;
+
+    for (const b of bursts){
+      const d = b.end - b.start;
+      sumAll += d;
+      maxEnd = Math.max(maxEnd, b.end);
+      perThread[b.thread] = (perThread[b.thread] || 0) + d;
+    }
+
+    const serial =
+      Number(document.getElementById('serialTime').value || 0) /
+      Number(document.getElementById('serialUnits').value || 1);
+
+    if (serial <= 0) return;
+
+    const speedup = serial / maxEnd;
+    const geff = speedup / T;
+    const ceff = serial / sumAll;
+
+    const sums = Object.values(perThread);
+    const avg = sums.reduce((a,b)=>a+b,0) / sums.length;
+    const lbal = avg / Math.max(...sums);
+
+    speedupEl.textContent = speedup.toFixed(3);
+    geffEl.textContent = geff.toFixed(3);
+    ceffEl.textContent = ceff.toFixed(3);
+    lbalEl.textContent = lbal.toFixed(3);
+  }
+
+  const speedupEl = document.getElementById('speedup');
+  const geffEl = document.getElementById('geff');
+  const ceffEl = document.getElementById('ceff');
+  const lbalEl = document.getElementById('lbal');
+
+  ['serialTime','serialUnits'].forEach(id =>
+    document.getElementById(id).addEventListener('input', ()=>computeStats(currentBursts))
+  );
 
   unitsSel.addEventListener('change', updatePlot);
   document.querySelectorAll('input[name=colorby]').forEach(r=>r.addEventListener('change', updatePlot));
