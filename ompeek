@@ -14,8 +14,8 @@ realpath_portable() {
     dir="$(cd "$(dirname "$target")" && pwd)"
     target="$(readlink "$target")"
     case "$target" in
-      /*) ;;
-      *) target="$dir/$target" ;;
+    /*) ;;
+    *) target="$dir/$target" ;;
     esac
   done
   dir="$(cd "$(dirname "$target")" && pwd)"
@@ -57,30 +57,48 @@ EOF
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --filename)
-      [ $# -ge 2 ] || { echo "ERROR: --filename requires a value" >&2; exit 2; }
-      FILENAME="$2"; shift 2;;
-    --file-format)
-      [ $# -ge 2 ] || { echo "ERROR: --file-format requires a value" >&2; exit 2; }
-      FILE_FORMAT="$2"; shift 2;;
-    -h|--help)
-      show_help; exit 0;;
-    --)
+  --filename)
+    [ $# -ge 2 ] || {
+      echo "ERROR: --filename requires a value" >&2
+      exit 2
+    }
+    FILENAME="$2"
+    shift 2
+    ;;
+  --file-format)
+    [ $# -ge 2 ] || {
+      echo "ERROR: --file-format requires a value" >&2
+      exit 2
+    }
+    FILE_FORMAT="$2"
+    shift 2
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  --)
+    shift
+    if [ $# -gt 0 ]; then
+      APP="$1"
       shift
-      if [ $# -gt 0 ]; then
-        APP="$1"; shift
-        APP_ARGS=("$@")
-        set --
-      fi
-      break;;
-    -*)
-      echo "ERROR: Unknown option: $1" >&2
-      show_help; exit 2;;
-    *)
-      APP="$1"; shift
       APP_ARGS=("$@")
       set --
-      break;;
+    fi
+    break
+    ;;
+  -*)
+    echo "ERROR: Unknown option: $1" >&2
+    show_help
+    exit 2
+    ;;
+  *)
+    APP="$1"
+    shift
+    APP_ARGS=("$@")
+    set --
+    break
+    ;;
   esac
 done
 
